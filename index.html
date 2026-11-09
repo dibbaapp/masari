@@ -325,9 +325,10 @@ const SUBJECT_LABEL = {
   biology:'الأحياء', env:'العلوم البيئية', english:'اللغة الإنجليزية', arabic:'اللغة العربية',
   islamic:'التربية الإسلامية', it:'تقنية المعلومات', social:'التاريخ / الجغرافيا', art:'الفنون التشكيلية',
   music:'المهارات الموسيقية', sport:'المهارات الرياضية', business:'إدارة الأعمال', french:'اللغة الفرنسية',
-  german:'اللغة الألمانية', chinese:'اللغة الصينية', watani:'هذا وطني', english_skills:'مهارات اللغة الإنجليزية',
+  german:'اللغة الألمانية', chinese:'اللغة الصينية', watani:'هذا وطني', math:'الرياضيات', english_skills:'مهارات اللغة الإنجليزية',
   geography:'الجغرافيا والتقنيات الحديثة', history:'التاريخ'
 };
+const subjName = k => S.grade === '10' && k === 'social' ? 'الدراسات الاجتماعية' : SUBJECT_LABEL[k];
 const CORE = ['islamic','arabic','english','watani'];
 const ELECTIVE_GROUPS = [
   {key:'science', label:'مواد العلوم', items:['biology','chemistry','physics','env']},
@@ -384,6 +385,7 @@ const LIKERT = [['لا تشبهني',0],['إلى حدٍّ ما',1],['تشبهن�
 const STEPS = [
   {id:'home', t:'البداية', s:'تعرّف على الرحلة', c:'#ff7a59', i:'rocket'},
   {id:'me', t:'بياناتي', s:'الصف والمعلومات الأساسية', c:'#ff5fa2', i:'user'},
+  {id:'mode', t:'طريقتي', s:'كيف تريد اختيار تخصصك؟', c:'#14b8c4', i:'grid'},
   {id:'interest', t:'ميولي', s:'اختبار الميول المهنية', c:'#b14cff', i:'heart'},
   {id:'subjects', t:'موادي', s:'اختيار المواد وفق الضوابط', c:'#3b82f6', i:'book'},
   {id:'grades', t:'درجاتي', s:'إدخال الدرجات', c:'#12b886', i:'chart'},
@@ -393,11 +395,15 @@ const STEPS = [
 const STEP = Object.fromEntries(STEPS.map(x => [x.id, x]));
 const FLOW = {
   '': ['home','me'],
-  '10': ['home','me','interest','results','passport'],
   '11': ['home','me','subjects','grades','results','passport'],
   '12': ['home','me','subjects','grades','results','passport'],
 };
-const flow = () => FLOW[S.grade] || FLOW[''];
+const FLOW_10 = {interest:['interest','results','passport'], all:['results','passport'], grades:['grades','results','passport']};
+const flow = () => S.grade === '10' ? ['home','me','mode', ...(FLOW_10[S.mode10] || [])] : (FLOW[S.grade] || FLOW['']);
+const flowOpen = () => !S.grade || (S.grade === '10' && !S.mode10); // المسار لم يتحدد بعد
+// طالب العاشر الذي اختار طريق الدرجات يسير في مسار النتائج نفسه للحادي عشر والثاني عشر
+const usesExplore = () => S.grade === '10' && S.mode10 !== 'grades';
+const G10_SUBJECTS = ['islamic','arabic','english','math','physics','chemistry','biology','social','it'];
 const GRADE_LABEL = {'10':'الصف العاشر', '11':'الصف الحادي عشر', '12':'الصف الثاني عشر'};
 // ألوان وأيقونات المسارات
 const FIELD_STYLE = {
@@ -418,7 +424,7 @@ const KINDS = ['حكومي','بعثة داخلية','منحة داخلية','ب�
 const STORE_KEY = 'masari-v1';
 const blank = () => ({step:'home', name:'', school:'', grade:'', gender:'',
   answers:{}, envPick:[], g11:{math:'', el:[]}, g12:{math:'', el:[]},
-  grades:{}, favs:[], notes:'', seen:{}, ui:{tab:'paths', q:'', field:'', kind:'', sug:'', status:'all', sort:''}});
+  grades:{}, g10:{}, mode10:'', favs:[], notes:'', seen:{}, ui:{tab:'paths', q:'', field:'', kind:'', sug:'', status:'all', sort:''}});
 let S = load();
 function load(){
   try { const raw = localStorage.getItem(STORE_KEY); if (raw) return Object.assign(blank(), JSON.parse(raw)); } catch(e){}
@@ -455,13 +461,19 @@ function fieldMatch(fieldKey){
 /* ============ المواد ============ */
 const curSet = () => S.grade === '12' ? S.g12 : S.g11;
 function studentSubjects(){
+  if (S.grade === '10') return G10_SUBJECTS;
   const set = curSet(); const list = [...CORE];
   if (set.math) list.splice(3, 0, set.math === 'adv' ? 'math_adv' : 'math_basic');
   return list.concat(set.el);
 }
-function gradeVal(k){ const v = S.grades[k]; return (v === '' || v == null || isNaN(+v)) ? null : +v; }
+const gradesOf = () => S.grade === '10' ? S.g10 : S.grades;
+function gradeVal(k){ const v = gradesOf()[k]; return (v === '' || v == null || isNaN(+v)) ? null : +v; }
 // درجة الطالب في مادة كما يطلبها الدليل
 function reqGrade(key){
+  if (S.grade === '10') {
+    if (key === 'math_adv' || key === 'math_basic') return gradeVal('math'); // العاشر لا يفرّق بين الأساسية والمتقدمة
+    return G10_SUBJECTS.includes(key) ? gradeVal(key) : null;
+  }
   const set = curSet();
   if (key === 'math_adv') return set.math === 'adv' ? gradeVal('math') : null;
   if (key === 'math_basic') return set.math === 'basic' ? gradeVal('math') : null;
@@ -570,7 +582,7 @@ const PATHS = {
   refresh:'<path d="M20 12a8 8 0 1 1-2.3-5.7L20 8M20 3v5h-5"/>',
 };
 const svg = (k, w) => `<svg ${w?`width="${w}" height="${w}"`:''} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${PATHS[k]||''}</svg>`;
-const eyebrow = id => { const f = flow(), i = f.indexOf(id); return `<span class="eyebrow" style="--c:${STEP[id].c}"><i>${svg(STEP[id].i)}</i>المحطة ${i.toLocaleString('ar-OM')}${S.grade?' من '+(f.length-1).toLocaleString('ar-OM'):''}</span>`; };
+const eyebrow = id => { const f = flow(), i = f.indexOf(id); return `<span class="eyebrow" style="--c:${STEP[id].c}"><i>${svg(STEP[id].i)}</i>المحطة ${i.toLocaleString('ar-OM')}${flowOpen()?'':' من '+(f.length-1).toLocaleString('ar-OM')}</span>`; };
 const ICON = {
   logo:'<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19c4-1 6-4 8-8s4-6 8-7"/><circle cx="4" cy="19" r="2"/><path d="M15 4h5v5"/></svg>',
   arrow:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M19 12H5M11 18l-6-6 6-6"/></svg>',
@@ -578,6 +590,7 @@ const ICON = {
 };
 function isDone(id){
   if (id === 'me') return !!S.grade;
+  if (id === 'mode') return !!S.mode10;
   if (id === 'interest') return hasInterest();
   if (id === 'subjects') return subjectsValid();
   if (id === 'grades') return overallAvg() != null;
@@ -604,9 +617,9 @@ function navButtons(prev, next, nextLabel, nextDisabled){
   </div>`;
 }
 function render(){
-  if (!flow().includes(S.step)) S.step = 'me';
+  if (!flow().includes(S.step)) S.step = S.grade === '10' ? 'mode' : 'me';
   renderChrome();
-  const html = ({home:viewHome, me:viewMe, interest:viewInterest, subjects:viewSubjects, grades:viewGrades, results:S.grade==='10'?viewExplore:viewResults, passport:viewPassport}[S.step] || viewHome)();
+  const html = ({home:viewHome, me:viewMe, mode:viewMode, interest:viewInterest, subjects:viewSubjects, grades:viewGrades, results:usesExplore()?viewExplore:viewResults, passport:viewPassport}[S.step] || viewHome)();
   const [head, body] = html.includes('<!--/head-->') ? html.split('<!--/head-->') : ['', html];
   const h = document.getElementById('head'); h.innerHTML = head; h.style.maxWidth = S.step === 'home' ? 'none' : '';
   document.getElementById('view').innerHTML = body;
@@ -617,10 +630,10 @@ function go(id){ S.step = id; render(); window.scrollTo({top:0, behavior:'smooth
 /* --- البداية --- */
 function viewHome(){
   const st = [
-    ['interest','طلبة الصف العاشر','اكتشف ميولك المهنية، ثم تصفّح التخصصات الأقرب لك، واعرف المواد التي عليك دراستها والنسبة المطلوبة في كل مادة.'],
+    ['interest','طلبة الصف العاشر','اختر طريقتك: اكتشف ميولك، أو تصفّح جميع التخصصات مباشرة، أو أدخل درجات الفصل الأول لتعرف ما تستوفي شروطه.'],
     ['subjects','طلبة الصفين الحادي عشر والثاني عشر','أدخل موادك ودرجاتك، ويعرض لك «مساري» التخصصات المتاحة لك وفق شروط دليل الطالب.'],
   ];
-  const canResume = S.grade === '10' ? hasInterest() : (!!S.grade && overallAvg() != null);
+  const canResume = S.grade === '10' ? (S.mode10 === 'interest' ? hasInterest() : S.mode10 === 'all' || overallAvg() != null) : (!!S.grade && overallAvg() != null);
   const blob = (x,y,r,c,o) => `<circle cx="${x}" cy="${y}" r="${r}" fill="${c}" opacity="${o||1}"/>`;
   return `
   <section class="hero">
@@ -654,7 +667,7 @@ function viewHome(){
 /* --- بياناتي --- */
 function viewMe(){
   const cards = [
-    ['10','الصف العاشر','interest','الميول المهنية ← التخصصات ← المواد والنسب المطلوبة'],
+    ['10','الصف العاشر','interest','اختر طريقتك: الميول، أو جميع التخصصات، أو درجات الفصل الأول'],
     ['11','الصف الحادي عشر','subjects','موادي ← درجاتي ← التخصصات المتاحة'],
     ['12','الصف الثاني عشر','grades','موادي ← درجاتي ← التخصصات المتاحة'],
   ];
@@ -674,6 +687,22 @@ function viewMe(){
   <div class="grid g3">${cards.map(([v,t,id,d])=>`<button class="card grade-card ${S.grade===v?'on':''}" style="--c:${STEP[id].c}" data-pick="${v}">
     <span class="ic">${svg(STEP[id].i)}</span><h3>${t}</h3><span class="muted small">${d}</span></button>`).join('')}</div>
   ${navButtons('home')}`;
+}
+
+/* --- طريقة الصف العاشر --- */
+function viewMode(){
+  const cards = [
+    ['interest','#b14cff','heart','بحسب ميولي','أجب عن اختبار قصير، ونقترح لك التخصصات الأقرب لشخصيتك.'],
+    ['all','#3b82f6','grid','من جميع التخصصات','تصفّح كل التخصصات واختر بنفسك مباشرة، مع المواد والنسب المطلوبة لكل تخصص.'],
+    ['grades','#12b886','chart','بمواد ودرجات الفصل الأول','أدخل درجاتك، ونعرض لك التخصصات التي تستوفي شروطها بناءً عليها.'],
+  ];
+  return `
+  ${eyebrow('mode')}
+  <h1>كيف تريد أن تختار تخصصك؟</h1>
+  <p class="lead">أمامك ثلاث طرق، اختر الأنسب لك، ويمكنك العودة وتغييرها في أي وقت.</p><!--/head-->
+  <div class="grid g3">${cards.map(([v,c,i,t,d])=>`<button class="card grade-card ${S.mode10===v?'on':''}" style="--c:${c}" data-mode="${v}">
+    <span class="ic">${svg(i)}</span><h3>${t}</h3><span class="muted small">${d}</span></button>`).join('')}</div>
+  ${navButtons('me')}`;
 }
 
 /* --- ميولي --- */
@@ -708,7 +737,7 @@ function viewInterest(){
       </div>
     </div>
   </div>
-  ${navButtons('me','results','اعرض التخصصات', !show)}`;
+  ${navButtons('mode','results','اعرض التخصصات', !show)}`;
 }
 
 /* --- موادي --- */
@@ -742,18 +771,18 @@ function viewSubjects(){
 
 /* --- درجاتي --- */
 function viewGrades(){
-  const subs = studentSubjects(); const avg = overallAvg();
+  const subs = studentSubjects(), avg = overallAvg(), is10 = S.grade === '10';
   const keyOf = k => (k==='math_adv'||k==='math_basic') ? 'math' : k;
   const filled = subs.filter(k => gradeVal(keyOf(k)) != null).length;
   return `
   ${eyebrow('grades')}
-  <h1>درجاتي</h1>
-  <p class="lead">${S.grade==='12' ? 'أدخل درجاتك (أو المتوقعة) في مواد الصف الثاني عشر.' : 'أدخل درجاتك الحالية أو المتوقعة. سنستخدمها لتقدير التخصصات المتاحة لك في الصف الثاني عشر.'}</p><!--/head-->
+  <h1>${is10 ? 'مواد ودرجات الفصل الأول' : 'درجاتي'}</h1>
+  <p class="lead">${is10 ? 'أدخل درجتك من ١٠٠ في كل مادة درستها، واترك خانة المادة فارغة إن لم تدرسها.' : S.grade==='12' ? 'أدخل درجاتك (أو المتوقعة) في مواد الصف الثاني عشر.' : 'أدخل درجاتك الحالية أو المتوقعة. سنستخدمها لتقدير التخصصات المتاحة لك في الصف الثاني عشر.'}</p><!--/head-->
   <div class="grid split" id="gr-grid">
     <div class="card">
-      ${subs.map(k=>{const gk=keyOf(k), v=S.grades[gk]??''; return `<div class="grade-row">
-        <label for="g-${gk}"><b>${SUBJECT_LABEL[k]}</b>${CORE.includes(k)||gk==='math'?' <span class="pill">أساسية</span>':''}</label>
-        <input type="range" min="40" max="100" step="1" value="${v===''?70:v}" data-grade="${gk}" aria-label="${SUBJECT_LABEL[k]}">
+      ${subs.map(k=>{const gk=keyOf(k), v=gradesOf()[gk]??''; return `<div class="grade-row">
+        <label for="g-${gk}"><b>${subjName(k)}</b>${!is10&&(CORE.includes(k)||gk==='math')?' <span class="pill">أساسية</span>':''}</label>
+        <input type="range" min="40" max="100" step="1" value="${v===''?70:v}" data-grade="${gk}" aria-label="${subjName(k)}">
         <input class="input" id="g-${gk}" type="number" min="0" max="100" step="0.5" value="${esc(v)}" data-grade="${gk}" placeholder="—">
       </div>`}).join('')}
     </div>
@@ -766,7 +795,7 @@ function viewGrades(){
         <p style="margin:6px 0 0">وفق دليل الطالب: <b>٤٠٪</b> من معدل جميع المواد + <b>٦٠٪</b> من معدل المواد التي يشترطها البرنامج. يحسبه «مساري» لكل برنامج تلقائياً.</p></div>
     </div>
   </div>
-  ${navButtons('subjects','results','اعرض تخصصاتي', avg==null)}`;
+  ${navButtons(is10?'mode':'subjects','results','اعرض تخصصاتي', avg==null)}`;
 }
 
 /* --- تخصصاتي --- */
@@ -825,8 +854,9 @@ function viewResults(){
     <div class="card stat" style="--c:#6a4cff"><small>المعدل العام</small><b>${fmt(avg)}%</b></div>
     <div class="card stat" style="--c:#12b886"><small>برامج مستوفٍ لشروطها</small><b style="color:var(--ok)">${elig.length.toLocaleString('ar-OM')}</b></div>
     <div class="card stat" style="--c:#ffb020"><small>برامج قريبة منك</small><b style="color:var(--warn)">${near.length.toLocaleString('ar-OM')}</b></div>
-    <div class="card stat" style="--c:#ff5fa2"><small>برامج تتطلب مواد لم تدرسها</small><b>${missing.length.toLocaleString('ar-OM')}</b></div>
+    <div class="card stat" style="--c:#ff5fa2"><small>${S.grade==='10'?'برامج تتطلب مواد لم تدخلها':'برامج تتطلب مواد لم تدرسها'}</small><b>${missing.length.toLocaleString('ar-OM')}</b></div>
   </div>
+  ${S.grade==='10' ? '<div class="note no-print" style="margin-bottom:14px">نتيجة استرشادية: قارنّا درجات الفصل الأول بشروط البرامج المعتمدة على دبلوم التعليم العام، واعتبرنا رياضيات الصف العاشر مقابلة للرياضيات الأساسية والمتقدمة معاً.</div>' : ''}
   <div class="tabs no-print">${[['paths','المتاحة والمقترحة لك'],['list','جميع التخصصات'],['favs','رغباتي ('+S.favs.length.toLocaleString('ar-OM')+')']].map(([k,l])=>`<button class="${tab===k?'on':''}" data-tab="${k}">${l}</button>`).join('')}</div>
   ${tab==='paths' ? viewPaths(all) : tab==='favs' ? viewFavs(all) : viewList(all)}
   ${navButtons('grades','passport','التالي: جوازي')}`;
@@ -999,14 +1029,14 @@ function exploreFavs(){
   <div class="list">${ps.map(p => exploreCard(p)).join('')}</div>`;
 }
 function viewExplore(){
-  const tab = S.ui.tab, code = hasInterest() ? topCode() : null;
+  const direct = S.mode10 === 'all', tab = direct && S.ui.tab === 'paths' ? 'list' : S.ui.tab, code = !direct && hasInterest() ? topCode() : null;
   return `
   ${eyebrow('results')}
-  <h1>التخصصات الأقرب لميولك</h1>
+  <h1>${direct ? 'جميع التخصصات' : 'التخصصات الأقرب لميولك'}</h1>
   <p class="lead">${code ? `رمز ميولك ${code.join('')}: ${code.map(k=>RIASEC[k].name).join('، ثم ')}. ` : ''}اختر التخصصات التي تهمك لتعرف المواد المطلوبة والنسبة في كل مادة.</p><!--/head-->
-  <div class="tabs no-print">${[['paths','المقترحة لميولي'],['list','جميع التخصصات'],['favs','اختياراتي ('+S.favs.length.toLocaleString('ar-OM')+')']].map(([k,l])=>`<button class="${tab===k?'on':''}" data-tab="${k}">${l}</button>`).join('')}</div>
+  <div class="tabs no-print">${[...(direct?[]:[['paths','المقترحة لميولي']]),['list','جميع التخصصات'],['favs','اختياراتي ('+S.favs.length.toLocaleString('ar-OM')+')']].map(([k,l])=>`<button class="${tab===k?'on':''}" data-tab="${k}">${l}</button>`).join('')}</div>
   ${tab==='paths' ? exploreSuggest() : tab==='favs' ? exploreFavs() : exploreList()}
-  ${navButtons('interest','passport','التالي: جوازي')}`;
+  ${navButtons(direct?'mode':'interest','passport','التالي: جوازي')}`;
 }
 
 /* --- جوازي --- */
@@ -1028,15 +1058,15 @@ function passportShell(badge, body, placeholder){
     <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-act="export">تنزيل نسخة</button><button class="btn primary" data-act="print">طباعة / حفظ PDF</button></div></div>`;
 }
 function passport10(){
-  const code = hasInterest() ? topCode() : null, sc = riasecScores();
+  const code = S.mode10 === 'interest' && hasInterest() ? topCode() : null, sc = riasecScores();
   const ps = S.favs.map(c => PROGRAM_BY_CODE[c]).filter(Boolean);
   const summary = p => { const r = reqRows(p).map(x => x.label + ' ' + pctAr(x.pct)); if (p.o) r.unshift('المعدل العام ' + pctAr(p.o)); return r.join(' · ') || 'راجع الدليل الرسمي'; };
   const badge = code ? `<div class="code-badge">${code.map(k=>`<span style="background:${RIASEC[k].color}">${k}</span>`).join('')}</div>` : '';
   return passportShell(badge, `
-    <div class="grid g2">
+    ${code ? `<div class="grid g2">
       <div><h3>ميولي</h3>${code?`<div class="small">${code.map(k=>`<div><span class="dot" style="background:${RIASEC[k].color}"></span> ${RIASEC[k].name} · ${Math.round(sc[k]*100)}%</div>`).join('')}</div>`:'<div class="muted small">لم يكتمل الاختبار.</div>'}</div>
       <div><h3>مساراتي الأقرب</h3><div class="small">${FIELDS.filter(f=>f.key!=='other').map(f=>({f,m:fieldMatch(f.key)??0})).sort((a,b)=>b.m-a.m).slice(0,4).map(x=>`<div>${x.f.label} · ${x.m}%</div>`).join('')}</div></div>
-    </div>
+    </div>` : ''}
     <h3 style="margin-top:22px">التخصصات التي اخترتها ومتطلباتها</h3>
     ${ps.length ? `<table class="plan"><thead><tr><th>الرمز</th><th>التخصص</th><th>المتطلبات</th></tr></thead><tbody>${ps.map(p=>`<tr><td class="code">${p.c}</td><td>${esc(p.n)}<div class="muted small">${esc(p.d||p.i)}</div></td><td class="small">${esc(summary(p))}</td></tr>`).join('')}</tbody></table>
     <h3 style="margin-top:22px">خطة موادي</h3>${planTable(ps)}` : '<p class="muted small">لم تختر تخصصات بعد. ارجع إلى «تخصصاتي» واضغط «اختر هذا التخصص».</p>'}`,
@@ -1047,7 +1077,7 @@ function passportResults(){
   const fields = FIELDS.filter(f=>f.key!=='other').map(f=>({f, n: all.filter(x=>x.p.f===f.key && x.e.status==='eligible').length})).sort((a,b)=>b.n-a.n).slice(0,4);
   return passportShell('', `
     <div class="grid g2">
-      <div><h3>موادي ودرجاتي</h3><div class="small">${studentSubjects().map(k=>{const g=gradeVal(k==='math_adv'||k==='math_basic'?'math':k);return `<div style="display:flex;justify-content:space-between"><span>${SUBJECT_LABEL[k]}</span><b>${g==null?'—':fmt(g)}</b></div>`}).join('')}<div style="display:flex;justify-content:space-between;border-top:1px solid var(--line);margin-top:4px;padding-top:4px"><span>المعدل العام</span><b>${fmt(avg)}</b></div></div></div>
+      <div><h3>موادي ودرجاتي</h3><div class="small">${studentSubjects().map(k=>{const g=gradeVal(k==='math_adv'||k==='math_basic'?'math':k);return `<div style="display:flex;justify-content:space-between"><span>${subjName(k)}</span><b>${g==null?'—':fmt(g)}</b></div>`}).join('')}<div style="display:flex;justify-content:space-between;border-top:1px solid var(--line);margin-top:4px;padding-top:4px"><span>المعدل العام</span><b>${fmt(avg)}</b></div></div></div>
       <div><h3>أكثر المسارات إتاحة لي</h3><div class="small">${fields.map(x=>`<div>${x.f.label} · ${x.n.toLocaleString('ar-OM')} برنامج</div>`).join('')}</div></div>
     </div>
     <h3 style="margin-top:22px">رغباتي مرتبة</h3>
@@ -1056,7 +1086,7 @@ function passportResults(){
     </tbody></table>` : '<p class="muted small">لم تضف رغبات بعد. ارجع إلى «تخصصاتي» واضغط ☆.</p>'}`,
     'مثال: أرفع درجتي في الكيمياء إلى ٨٥٪، وأحضر اليوم المفتوح لكلية الهندسة.');
 }
-function viewPassport(){ return S.grade === '10' ? passport10() : passportResults(); }
+function viewPassport(){ return usesExplore() ? passport10() : passportResults(); }
 
 /* ============ الرسائل التفاعلية ============ */
 const gx = (m, f) => S.gender === 'F' ? f : m;
@@ -1157,7 +1187,7 @@ function msgGradesDone(){
   return {icon:'target', color:'#ffb020', confetti: avg >= 60, kicker:gx('أحسنت، أنجزت كل البيانات','أحسنتِ، أنجزتِ كل البيانات'),
     title:hello()+tier[0], body:tier[1],
     extra:`<div class="msg-stats"><div><b>${fmt(avg)}%</b><small>المعدل العام</small></div><div><b style="color:var(--ok)">${el.toLocaleString('ar-OM')}</b><small>برنامج تستوفي شروطه</small></div><div><b style="color:var(--warn)">${nr.toLocaleString('ar-OM')}</b><small>برنامج قريب منك</small></div></div>`,
-    foot:gx('ثق بنفسك، فالقرار الذي تبنيه على معرفة هو بداية نجاحك.','ثقي بنفسكِ، فالقرار الذي تبنينه على معرفة هو بداية نجاحكِ.'),
+    foot:S.grade === '10' ? gx('هذه نتيجة استرشادية بدرجات الفصل الأول، وأمامك وقت كافٍ لتصنع أفضل منها. ثق بنفسك.','هذه نتيجة استرشادية بدرجات الفصل الأول، وأمامكِ وقت كافٍ لتصنعي أفضل منها. ثقي بنفسكِ.') : gx('ثق بنفسك، فالقرار الذي تبنيه على معرفة هو بداية نجاحك.','ثقي بنفسكِ، فالقرار الذي تبنينه على معرفة هو بداية نجاحكِ.'),
     cta:gx('اعرض تخصصاتي','اعرضي تخصصاتي')};
 }
 const GATES = {
@@ -1170,10 +1200,32 @@ function gated(to){
   const g = GATES[S.step+'>'+to], m = g && g();
   if (m) showMsg(m, () => go(to)); else go(to);
 }
+function msgModeAll(){
+  return {icon:'grid', color:'#3b82f6', kicker:'اختيارك بيدك',
+    title:hello()+gx('القرار لك، وكل التخصصات أمامك','القرار لكِ، وكل التخصصات أمامكِ'),
+    body:'سنعرض لك جميع التخصصات، ومع كل تخصص المواد المطلوبة والنسبة في كل مادة.',
+    steps:[['ابحث أو صفِّ بحسب المسار','أو بحسب نوع البرنامج والمعدل المطلوب.'],['اختر ما يهمك','تُجمع اختياراتك في «اختياراتي».'],['اطّلع على خطة موادك','المواد التي عليك اختيارها في الصف الحادي عشر.']],
+    cta:'اعرض التخصصات', stay:'ليس الآن'};
+}
+function msgModeGrades(){
+  return {icon:'chart', color:'#12b886', kicker:'كيف نستخدم درجاتك؟',
+    title:hello()+gx('درجاتك تكشف لك ما هو في متناولك','درجاتكِ تكشف لكِ ما هو في متناولكِ'),
+    body:'سنقارن درجات الفصل الأول بشروط برامج دليل الطالب.',
+    steps:[['أدخل درجة كل مادة درستها','ومن لم تدرسها اترك خانتها فارغة.'],['نحسب معدلك','من المواد التي أدخلتها فقط.'],['نعرض التخصصات التي تستوفي شروطها','والتخصصات القريبة منك أيضاً.']],
+    foot:'النتيجة استرشادية، فشروط البرامج تُطبَّق رسمياً على درجات دبلوم التعليم العام، وأمامك وقت كافٍ لتحسين مستواك.',
+    cta:'أدخل درجاتي', stay:'ليس الآن'};
+}
+function pickMode(v){
+  S.mode10 = v; Object.assign(S.ui, {tab: v === 'all' ? 'list' : 'paths', field:'', sug:'', status:'all', limit:40});
+  const [to, m] = v === 'interest' ? ['interest', once('pick10', msgPick10)]
+    : v === 'all' ? ['results', once('modeAll', msgModeAll)] : ['grades', once('modeGrades', msgModeGrades)];
+  if (m) { render(); showMsg(m, () => go(to)); } else go(to);
+}
 function pickGrade(v){
   S.grade = v; Object.assign(S.ui, {tab:'paths', field:'', sug:'', status:'all', limit:40});
-  const to = v === '10' ? 'interest' : 'subjects';
-  const m = once('pick'+v, v === '10' ? msgPick10 : msgPickUpper);
+  if (v === '10') return go('mode');
+  const to = 'subjects';
+  const m = once('pick'+v, msgPickUpper);
   if (m) { render(); showMsg(m, () => go(to)); } else go(to);
 }
 
@@ -1184,6 +1236,7 @@ document.addEventListener('click', ev => {
   if (d.msg) return closeMsg(d.msg === 'ok');
   if (d.go) return d.gate ? gated(d.go) : go(d.go);
   if (d.pick) return pickGrade(d.pick);
+  if (d.mode) return pickMode(d.mode);
   if (d.set) { S[d.set] = d.val; return render(); }
   if (d.ans != null) {
     const before = answeredCount(); S.answers[d.ans] = +d.val; keep(render);
@@ -1233,7 +1286,7 @@ document.addEventListener('input', ev => {
   if (d.bind) { S[d.bind] = t.value; save(); if (d.bind==='name') renderChrome(); return; }
   if (d.grade) {
     let v = t.value; if (v !== '') v = Math.max(0, Math.min(100, +v));
-    S.grades[d.grade] = v;
+    gradesOf()[d.grade] = v;
     document.querySelectorAll(`[data-grade="${d.grade}"]`).forEach(x => { if (x !== t) x.value = v === '' ? 70 : v; });
     const avg = overallAvg(); const o = document.getElementById('avg-out'); if (o) o.textContent = fmt(avg) + (avg!=null?'%':'');
     const nb = document.querySelector('.nav .btn.primary'); if (nb) nb.disabled = avg == null;
