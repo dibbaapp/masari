@@ -417,7 +417,7 @@ const KINDS = ['حكومي','بعثة داخلية','منحة داخلية','ب�
 /* ============ الحالة ============ */
 const STORE_KEY = 'masari-v1';
 const blank = () => ({step:'home', name:'', school:'', grade:'', gender:'',
-  answers:{}, envPick:[], g11:{math:'', el:[]}, g12:{math:'', el:[]}, g11g:{math:'', english:''},
+  answers:{}, envPick:[], g11:{math:'', el:[]}, g12:{math:'', el:[]},
   grades:{}, favs:[], notes:'', seen:{}, ui:{tab:'paths', q:'', field:'', kind:'', sug:'', status:'all', sort:''}});
 let S = load();
 function load(){
@@ -475,13 +475,14 @@ function overallAvg(){
 }
 
 /* ضوابط اختيار المواد (ضوابط 2027/2028 واستمارة الصف الحادي عشر) */
-function validate11(set){
+function validateSubjects(set){
   const r = [];
   const sci = set.el.filter(x => SCIENCES.includes(x)), sk = set.el.filter(x => SKILLS.includes(x)), fl = set.el.filter(x => FOREIGN.includes(x));
   r.push(set.math ? {t:'ok', m:'اخترت مادة رياضيات واحدة ('+(set.math==='adv'?'المتقدمة':'الأساسية')+').'} : {t:'bad', m:'يلتزم الطالب بدراسة مادة واحدة من الرياضيات (الأساسية أو المتقدمة).'});
   r.push(set.el.length === 3 ? {t:'ok', m:'اخترت ثلاث مواد اختيارية.'} : {t:'bad', m:'يلتزم الطالب باختيار ثلاث مواد اختيارية (اخترت '+set.el.length+').'});
   r.push(sci.length ? {t:'ok', m:'اخترت '+sci.length+' من مواد العلوم.'} : {t:'bad', m:'يلتزم الطالب بدراسة مادة واحدة على الأقل من مواد العلوم (الأحياء، الفيزياء، الكيمياء، العلوم البيئية).'});
   if (sk.length > 1) r.push({t:'bad', m:'يحق للطالب اختيار مادة واحدة فقط من مواد المهارات الفردية.'});
+  if (S.grade === '12') return r; // التنبيهات التالية تخص الانتقال من الحادي عشر إلى الثاني عشر
   if (fl.length > 1) r.push({t:'warn', m:'اخترت أكثر من لغة أجنبية. ستلتزم بدراسة اللغة التي تختارها في الصف الثاني عشر.'});
   if (fl.length) r.push({t:'info', m:'ستلتزم بدراسة '+fl.map(x=>SUBJECT_LABEL[x]).join(' و')+' في الصف الثاني عشر، ولا يمكن البدء بلغة أجنبية جديدة فيه.'});
   if (set.el.includes('it')) r.push({t:'info', m:'تقنية المعلومات: يمكنك تغييرها في الصف الثاني عشر، ولا يمكن دراستها فيه إن لم تُدرس في الحادي عشر.'});
@@ -490,42 +491,8 @@ function validate11(set){
   if (sci.length >= 2) r.push({t:'info', m:'يمكنك تغيير مادة علوم واحدة فقط في الصف الثاني عشر.'});
   return r;
 }
-function validate12(){
-  const a = S.g11, b = S.g12, r = [];
-  if (!a.math || a.el.length !== 3) { r.push({t:'warn', m:'أكمل أولاً اختيار مواد الصف الحادي عشر حتى نتحقق من ضوابط التغيير.'}); }
-  r.push(b.el.length === 3 ? {t:'ok', m:'اخترت ثلاث مواد اختيارية للصف الثاني عشر.'} : {t:'bad', m:'يلتزم الطالب بثلاث مواد اختيارية (اخترت '+b.el.length+').'});
-  // الرياضيات
-  if (!b.math) r.push({t:'bad', m:'اختر مادة الرياضيات للصف الثاني عشر.'});
-  else if (a.math === 'basic' && b.math === 'adv') {
-    const g = +S.g11g.math;
-    if (S.g11g.math === '') r.push({t:'warn', m:'التغيير إلى الرياضيات المتقدمة يتطلب 80% فأعلى في الرياضيات الأساسية بالصف الحادي عشر. أدخل درجتك للتحقق.'});
-    else r.push(g >= 80 ? {t:'ok', m:'يحق لك التغيير إلى الرياضيات المتقدمة (درجتك '+g+'%).'} : {t:'bad', m:'لا يحق لك التغيير إلى الرياضيات المتقدمة؛ يشترط 80% فأعلى في الرياضيات الأساسية (درجتك '+g+'%).'});
-  } else if (a.math === 'adv' && b.math === 'basic') r.push({t:'ok', m:'يحق لك التغيير من الرياضيات المتقدمة إلى الأساسية.'});
-  // العلوم
-  const s11 = a.el.filter(x => SCIENCES.includes(x)), s12 = b.el.filter(x => SCIENCES.includes(x));
-  const added = s12.filter(x => !s11.includes(x)), dropped = s11.filter(x => !s12.includes(x));
-  if (!s12.length) r.push({t:'bad', m:'يجب أن تتضمن موادك مادة علوم واحدة على الأقل.'});
-  if (added.length) r.push({t:'bad', m:'لا يمكنك اختيار '+added.map(x=>SUBJECT_LABEL[x]).join('، ')+' في الصف الثاني عشر لأنك لم تدرسها في الحادي عشر.'});
-  if (s11.length === 1 && dropped.length) r.push({t:'bad', m:'اخترت مادة علوم واحدة في الحادي عشر، فتلتزم بدراستها ('+SUBJECT_LABEL[s11[0]]+') في الثاني عشر.'});
-  if (s11.length >= 2 && dropped.length > 1) r.push({t:'bad', m:'يمكن تغيير مادة علوم واحدة فقط في الصف الثاني عشر.'});
-  // تقنية المعلومات
-  if (b.el.includes('it') && !a.el.includes('it')) r.push({t:'bad', m:'لا يحق لك دراسة تقنية المعلومات في الصف الثاني عشر لأنك لم تدرسها في الحادي عشر.'});
-  // مهارات اللغة الإنجليزية
-  if (b.el.includes('english_skills') && !a.el.includes('english_skills')) {
-    const g = +S.g11g.english;
-    if (S.g11g.english === '') r.push({t:'warn', m:'اختيار مهارات اللغة الإنجليزية يتطلب 80% فأعلى في اللغة الإنجليزية بالصف الحادي عشر. أدخل درجتك للتحقق.'});
-    else r.push(g >= 80 ? {t:'ok', m:'يحق لك اختيار مهارات اللغة الإنجليزية (درجتك '+g+'%).'} : {t:'bad', m:'لا يحق لك اختيار مهارات اللغة الإنجليزية؛ يشترط 80% فأعلى في اللغة الإنجليزية (درجتك '+g+'%).'});
-  }
-  // اللغات الأجنبية
-  a.el.filter(x => FOREIGN.includes(x)).forEach(x => { if (!b.el.includes(x)) r.push({t:'bad', m:'يلتزم الطالب بدراسة '+SUBJECT_LABEL[x]+' في الصف الثاني عشر لأنه اختارها في الحادي عشر.'}); });
-  b.el.filter(x => FOREIGN.includes(x) && !a.el.includes(x)).forEach(x => r.push({t:'bad', m:'لا يحق لك دراسة '+SUBJECT_LABEL[x]+' في الصف الثاني عشر لأنك لم تدرسها في الحادي عشر.'}));
-  // المهارات الفردية
-  if (b.el.filter(x => SKILLS.includes(x)).length > 1) r.push({t:'bad', m:'مادة واحدة فقط من المهارات الفردية.'});
-  if (!r.some(x => x.t === 'bad' || x.t === 'warn')) r.push({t:'ok', m:'اختياراتك للصف الثاني عشر متوافقة مع ضوابط التغيير.'});
-  return r;
-}
 function subjectsValid(){
-  const rules = S.grade === '12' ? validate12() : validate11(S.g11);
+  const rules = validateSubjects(curSet());
   return !rules.some(x => x.t === 'bad');
 }
 
@@ -746,15 +713,13 @@ function viewInterest(){
 
 /* --- موادي --- */
 function subjectPicker(set, which){
-  const other = which === 'g12' ? S.g11 : null;
   return `
   <div class="subj-group" style="--c:#6a4cff"><h4><span class="dot" style="background:#6a4cff"></span>الرياضيات (مادة واحدة إلزامية)</h4>
     <div class="chips">${[['basic','الرياضيات الأساسية'],['adv','الرياضيات المتقدمة']].map(([v,l])=>`<button class="chip ${set.math===v?'on':''}" data-math="${which}" data-val="${v}">${l}</button>`).join('')}</div>
   </div>
   ${ELECTIVE_GROUPS.map(g=>`<div class="subj-group" style="--c:${GROUP_COLOR[g.key]}"><h4><span class="dot" style="background:${GROUP_COLOR[g.key]}"></span>${g.label}</h4><div class="chips">${g.items.map(k=>{
     const on = set.el.includes(k);
-    const hint = other && on && !other.el.includes(k) ? ' (جديدة)' : '';
-    return `<button class="chip ${on?'on':''}" data-el="${which}" data-val="${k}">${SUBJECT_LABEL[k]}${hint}</button>`;}).join('')}</div></div>`).join('')}
+    return `<button class="chip ${on?'on':''}" data-el="${which}" data-val="${k}">${SUBJECT_LABEL[k]}</button>`;}).join('')}</div></div>`).join('')}
   <div class="small muted">المواد الأساسية لجميع الطلبة: التربية الإسلامية، اللغة العربية، اللغة الإنجليزية، الرياضيات، هذا وطني.</div>`;
 }
 function rulesList(rules){ const ic = {ok:'✓', bad:'✕', warn:'!', info:'i'}; return `<ul class="rules">${rules.map(r=>`<li class="${r.t}"><span class="ic">${ic[r.t]}</span><span>${r.m}</span></li>`).join('')}</ul>`; }
@@ -763,21 +728,13 @@ function viewSubjects(){
   return `
   ${eyebrow('subjects')}
   <h1>موادي تبني مساري</h1>
-  <p class="lead">${is12 ? 'اختر المواد التي درستها في الصف الحادي عشر، ثم موادك في الثاني عشر. يتحقق النظام فوراً من ضوابط التغيير.' : 'اختر مادة الرياضيات وثلاث مواد اختيارية. يتحقق النظام فوراً من ضوابط الاختيار.'}</p><!--/head-->
+  <p class="lead">اختر مادة الرياضيات وثلاث مواد اختيارية. يتحقق النظام فوراً من ضوابط الاختيار.</p><!--/head-->
   <div class="grid split" id="subj-grid">
     <div class="grid">
-      <div class="card"><h3>${is12?'مواد الصف الحادي عشر':'مواد الصف الحادي عشر'}</h3><div style="margin-top:12px">${subjectPicker(S.g11,'g11')}</div></div>
-      ${is12 ? `
-      <div class="card"><h3>درجات الحادي عشر المؤثرة في التغيير</h3>
-        <div class="grid g2" style="margin-top:10px">
-          <div class="field"><label>${S.g11.math==='adv'?'الرياضيات المتقدمة':'الرياضيات الأساسية'}</label><input class="input" type="number" min="0" max="100" data-g11g="math" value="${esc(S.g11g.math)}" placeholder="مثال: 82"></div>
-          <div class="field"><label>اللغة الإنجليزية</label><input class="input" type="number" min="0" max="100" data-g11g="english" value="${esc(S.g11g.english)}" placeholder="مثال: 85"></div>
-        </div></div>
-      <div class="card"><h3>مواد الصف الثاني عشر</h3><div style="margin-top:12px">${subjectPicker(S.g12,'g12')}</div>
-        <button class="btn sm" style="margin-top:12px" data-act="copy11">نسخ مواد الحادي عشر</button></div>` : ''}
+      <div class="card"><h3>مواد ${GRADE_LABEL[S.grade]}</h3><div style="margin-top:12px">${subjectPicker(curSet(), is12?'g12':'g11')}</div></div>
     </div>
     <div class="grid sticky">
-      <div class="card"><h3>التحقق من الضوابط</h3><div style="margin-top:10px">${rulesList(is12 ? validate12() : validate11(S.g11))}</div></div>
+      <div class="card"><h3>التحقق من الضوابط</h3><div style="margin-top:10px">${rulesList(validateSubjects(curSet()))}</div></div>
     </div>
   </div>
   ${navButtons('me','grades','التالي: درجاتي', !subjectsValid())}`;
@@ -1167,7 +1124,7 @@ function msgPickUpper(){
   return {icon:'book', color:'#3b82f6', kicker:'كيف يعمل «مساري» معك؟',
     title:hello()+gx('خطوتان تفصلانك عن تخصصاتك','خطوتان تفصلانكِ عن تخصصاتكِ'),
     body:'سنقارن موادك ودرجاتك بشروط برامج دليل الطالب، لتعرف بوضوح ما هو متاح لك اليوم.',
-    steps:[[is12?'اختر مواد الحادي عشر والثاني عشر':'اختر موادك', is12?'يتحقق النظام فوراً من ضوابط التغيير بين الصفين.':'مادة الرياضيات وثلاث مواد اختيارية، مع تحقق فوري من الضوابط.'],['أدخل درجاتك','الدرجات الفعلية أو المتوقعة، ويُحسب معدلك العام مباشرة.'],['نحسب معدلك التنافسي لكل برنامج','٤٠٪ من معدل جميع المواد + ٦٠٪ من معدل مواد البرنامج، كما ورد في دليل الطالب.']],
+    steps:[[is12?'اختر مواد الصف الثاني عشر':'اختر موادك', 'مادة الرياضيات وثلاث مواد اختيارية، مع تحقق فوري من الضوابط.'],['أدخل درجاتك','الدرجات الفعلية أو المتوقعة، ويُحسب معدلك العام مباشرة.'],['نحسب معدلك التنافسي لكل برنامج','٤٠٪ من معدل جميع المواد + ٦٠٪ من معدل مواد البرنامج، كما ورد في دليل الطالب.']],
     cta:'اختر موادي', stay:'ليس الآن'};
 }
 function msgInterestDone(){
@@ -1247,7 +1204,6 @@ document.addEventListener('click', ev => {
   if (d.fav) { const i = S.favs.indexOf(d.fav); if (i>=0) S.favs.splice(i,1); else { S.favs.push(d.fav); toast(S.grade === '10' ? 'أضيف إلى اختياراتي' : 'أضيف إلى رغباتي'); } return keep(render); }
   if (d.move != null) { const i=+d.move, j=i+(+d.dir); [S.favs[i],S.favs[j]]=[S.favs[j],S.favs[i]]; return keep(render); }
   const act = d.act;
-  if (act === 'copy11') { S.g12 = {math:S.g11.math, el:[...S.g11.el]}; return keep(render); }
   if (act === 'more') { S.ui.limit = (S.ui.limit||40) + 40; return keep(render); }
   if (act === 'print') return window.print();
   if (act === 'reset') { if (confirm('سيتم مسح جميع بياناتك من هذا الجهاز. هل أنت متأكد؟')) { S = blank(); render(); } return; }
@@ -1283,7 +1239,6 @@ document.addEventListener('input', ev => {
     const nb = document.querySelector('.nav .btn.primary'); if (nb) nb.disabled = avg == null;
     save(); renderChrome(); return;
   }
-  if (d.g11g) { S.g11g[d.g11g] = t.value; save(); clearTimeout(window._rt); window._rt = setTimeout(()=>keep(render), 500); return; }
   if (d.ui === 'q') { S.ui.q = t.value; S.ui.limit = 40; clearTimeout(window._qt); window._qt = setTimeout(()=>{ keep(render); const s=document.querySelector('[data-ui="q"]'); if (s){ s.focus(); s.setSelectionRange(s.value.length,s.value.length);} }, 250); }
 });
 document.addEventListener('change', ev => {
